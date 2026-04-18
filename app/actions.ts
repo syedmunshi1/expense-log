@@ -32,7 +32,7 @@ function todayISO(): string {
 
 export type ProcessResult =
   | { kind: "logged"; expense: Expense; currency: string }
-  | { kind: "summary"; message: string; count: number; currency: string }
+  | { kind: "summary"; message: string; count: number; currency: string; expenses: Expense[] }
   | { kind: "error"; message: string };
 
 /**
@@ -95,6 +95,7 @@ export async function processInput(input: string): Promise<ProcessResult> {
       message: summary,
       count: rows.length,
       currency,
+      expenses: rows,
     };
   } catch (err) {
     console.error("query path failed:", err);

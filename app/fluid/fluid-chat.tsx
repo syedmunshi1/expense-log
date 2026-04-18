@@ -479,21 +479,97 @@ function AssistantBubble({ result, currency }: { result: ProcessResult; time: st
     );
   }
 
-  // summary
+  // summary — show prose + expense list
+  const expenses = result.expenses ?? [];
   return (
-    <div style={{ display: "flex", justifyContent: "flex-start", padding: "3px 0" }}>
+    <div style={{ display: "flex", justifyContent: "flex-start", padding: "3px 0", maxWidth: "90%" }}>
       <div
         style={{
           background: "#c9e7f7",
           color: "#395663",
           borderRadius: "24px 24px 24px 0",
-          padding: "14px 18px",
-          maxWidth: "85%",
+          padding: "14px 16px",
+          width: "100%",
           fontSize: "15px",
           lineHeight: 1.6,
         }}
       >
-        {result.message}
+        {/* Prose summary */}
+        <p style={{ marginBottom: expenses.length > 0 ? "12px" : 0 }}>{result.message}</p>
+
+        {/* Expense list */}
+        {expenses.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {expenses.slice(0, 15).map((e) => {
+              const v = visualFor(e.category);
+              const dateLabel = new Date(e.date + "T00:00:00").toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              });
+              return (
+                <div
+                  key={e.id}
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "14px",
+                    padding: "10px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "50%",
+                      background: v.bg,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <CategoryIcon name={v.icon} size={14} color={v.color} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        color: "#2d3435",
+                        textTransform: "capitalize",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {e.description}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#757c7d" }}>
+                      {dateLabel} · {e.category}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      color: "#2d3435",
+                      flexShrink: 0,
+                    }}
+                  >
+                    -{formatAmount(e.amount, currency)}
+                  </div>
+                </div>
+              );
+            })}
+            {expenses.length > 15 && (
+              <p style={{ fontSize: "12px", textAlign: "center", color: "#757c7d", paddingTop: "4px" }}>
+                +{expenses.length - 15} more · check History tab
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

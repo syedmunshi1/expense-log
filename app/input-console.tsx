@@ -315,10 +315,52 @@ function AssistantBubble({
     );
   }
   // summary
+  const expenses = result.kind === "summary" ? (result.expenses ?? []) : [];
   return (
-    <div className="flex justify-start">
-      <div className="card row-enter max-w-[85%] px-4 py-3 text-sm leading-relaxed">
-        {result.message}
+    <div className="flex justify-start" style={{ maxWidth: "92%" }}>
+      <div className="card row-enter w-full px-4 py-3 text-sm leading-relaxed">
+        <p className={expenses.length > 0 ? "mb-3" : ""}>{result.message}</p>
+        {expenses.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            {expenses.slice(0, 15).map((e) => {
+              const v = visualFor(e.category);
+              const dateLabel = new Date(e.date + "T00:00:00").toLocaleDateString(
+                "en-US",
+                { month: "short", day: "numeric" },
+              );
+              return (
+                <div
+                  key={e.id}
+                  className="flex items-center gap-2.5 rounded-xl px-3 py-2"
+                  style={{ background: "var(--bg-elevated)" }}
+                >
+                  <div
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                    style={{ background: v.bg }}
+                  >
+                    <CategoryIcon name={v.icon} size={13} color={v.color} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold capitalize text-[color:var(--fg)]">
+                      {e.description}
+                    </div>
+                    <div className="text-[11px] text-[color:var(--muted)]">
+                      {dateLabel} · {e.category}
+                    </div>
+                  </div>
+                  <div className="shrink-0 font-mono text-xs font-bold tabular-nums text-[color:var(--fg)]">
+                    {formatAmount(e.amount, currency)}
+                  </div>
+                </div>
+              );
+            })}
+            {expenses.length > 15 && (
+              <p className="pt-1 text-center text-[11px] text-[color:var(--muted)]">
+                +{expenses.length - 15} more
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
