@@ -11,6 +11,7 @@ export type Expense = {
 
 export type ExpenseFilters = {
   category?: string;
+  keyword?: string;
   start_date?: string;
   end_date?: string;
 };
@@ -52,6 +53,12 @@ export async function fetchExpenses(
   if (filters.category) {
     params.push(filters.category);
     conditions.push(`LOWER(category) = LOWER($${params.length})`);
+  }
+  if (filters.keyword) {
+    params.push(`%${filters.keyword}%`);
+    const idx = params.length;
+    // Search both description and category, case-insensitive
+    conditions.push(`(description ILIKE $${idx} OR category ILIKE $${idx})`);
   }
   if (filters.start_date) {
     params.push(filters.start_date);

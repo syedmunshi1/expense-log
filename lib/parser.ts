@@ -12,6 +12,7 @@ export type QueryIntent = {
   intent: "query";
   filters: {
     category?: string;
+    keyword?: string;
     start_date?: string;
     end_date?: string;
   };
@@ -60,11 +61,18 @@ For a query, output:
 {
   "intent": "query",
   "filters": {
-    "category": "<optional; only if the user mentioned a category — use exact casing from the list above if there's a match>",
+    "category": "<optional; use ONLY when the user's word clearly matches one of the EXISTING CATEGORIES above (case-insensitive) — use exact casing from the list>",
+    "keyword": "<optional; use when the user mentions a SPECIFIC THING that is NOT one of the existing categories (e.g. 'auto', 'uber', 'chai', 'dmart') — we'll search the description for this word>",
     "start_date": "YYYY-MM-DD (optional)",
     "end_date": "YYYY-MM-DD (optional)"
   }
 }
+
+IMPORTANT for queries:
+- Pick EITHER category OR keyword, not both, unless truly needed.
+- If the user says "auto" and existing categories have "Transport" but not "Auto", use keyword: "auto" (so we search the description).
+- If the user says "food" and existing categories have "Food & Dining", use category: "Food & Dining".
+- For broad questions like "total for this week" or "how much did I spend today", omit both category and keyword.
 
 For ambiguous input (no amount in a log, unclear question), output:
 {
@@ -131,6 +139,7 @@ export function normalize(raw: unknown): ParseResult {
       intent: "query",
       filters: {
         category: typeof f.category === "string" && f.category ? f.category : undefined,
+        keyword: typeof f.keyword === "string" && f.keyword ? f.keyword.trim() : undefined,
         start_date:
           typeof f.start_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(f.start_date)
             ? f.start_date

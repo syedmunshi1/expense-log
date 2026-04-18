@@ -9,14 +9,16 @@ export type SummarizeContext = {
 };
 
 /**
- * Produce a short prose answer for a query intent, given the filtered rows.
+ * Produce a conversational answer for a query, given the filtered rows.
  * The model is told the total and count up front to anchor accuracy.
  */
 export async function summarize(ctx: SummarizeContext): Promise<string> {
   const { question, expenses, currency, today } = ctx;
+  const symbolHint = symbolHintFor(currency);
 
   if (expenses.length === 0) {
-    return "No matching expenses found.";
+    // Ask Claude to give a friendly "nothing found" reply tailored to the question.
+    return await emptyReply(question, currency, today);
   }
 
   const total = expenses.reduce((s, e) => s + parseFloat(e.amount), 0);
@@ -40,28 +42,32 @@ export async function summarize(ctx: SummarizeContext): Promise<string> {
     )
     .join("\n");
 
-  const system = `You write short, friendly summaries of a user's personal expenses.
-- Currency: ${currency}. Write amounts with the appropriate symbol (₹ for INR, $ for USD, € for EUR, £ for GBP).
+  const system = `You are a friendly personal-finance assistant answering questions about the user's own spending.
+- Currency: ${currency}. Write amounts with the appropriate symbol (${symbolHint}).
 - Today: ${today}.
-- Be concise: 1-3 sentences. Do not list every expense. Call out the total and anything notable (biggest expense, dominant category, unusual day).
-- Do not invent facts. Use ONLY the numbers provided.`;
+- Be conversational and warm, like a helpful friend — NOT like a report.
+- Keep it short: 1–2 sentences is ideal. Do not list every expense.
+- Lead with the direct answer (the total), then add ONE interesting observation if relevant (biggest single expense, or the dominant day/category).
+- Do NOT start with "Based on..." or "According to...". Just answer naturally.
+- Do NOT invent facts. Use ONLY the numbers provided.
+- Do NOT mention "matching expenses" or "rows" — the user doesn't think in those terms.`;
 
-  const user = `Question: ${question}
+  const user = `User asked: "${question}"
 
-Matching expenses (${expenses.length} total):
+Data for the answer (${expenses.length} expenses):
 Total: ${total.toFixed(2)}
 By category:
 ${categoryBreakdown}
 
-Recent sample:
+Sample:
 ${sample}
 
-Write the summary now.`;
+Answer the user now, conversationally.`;
 
   const claude = getClaude();
   const response = await claude.messages.create({
     model: HAIKU_MODEL,
-    max_tokens: 300,
+    max_tokens: 250,
     system,
     messages: [{ role: "user", content: user }],
   });
@@ -72,5 +78,49 @@ Write the summary now.`;
     .join("")
     .trim();
 
-  return text || "Summary unavailable.";
+  return text || `You spent ${symbolHint}${total.toFixed(2)} across ${expenses.length} expenses.`;
+}
+
+async function emptyReply(
+  question: string,
+  currency: string,
+  today: string,
+): Promise<string> {
+  const system = `You are a friendly personal-finance assistant.
+The user asked about their spending, but there were NO matching expenses.
+- Currency: ${currency}. Today: ${today}.
+- Respond in 1 short conversational sentence.
+- Be warm and helpful, not apologetic or robotic.
+- If the question mentioned a specific thing (like "auto" or "coffee"), acknowledge it.
+- Examples of good tone: "Looks like you haven't logged any auto rides this week yet." or "Nothing on groceries today — maybe tomorrow!"
+- Never use phrases like "no matching expenses" or "no records found".`;
+
+  try {
+    const claude = getClaude();
+    const response = await claude.messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 100,
+      system,
+      messages: [{ role: "user", content: `User asked: "${question}"` }],
+    });
+    const text = response.content
+      .filter((b): b is { type: "text"; text: string } => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
+    return text || "I don't see anything for that yet.";
+  } catch {
+    return "I don't see anything for that yet.";
+  }
+}
+
+function symbolHintFor(code: string): string {
+  const map: Record<string, string> = {
+    INR: "₹",
+    USD: "$",
+    EUR: "€",
+    GBP: "£",
+    JPY: "¥",
+  };
+  return map[code.toUpperCase()] ?? code;
 }

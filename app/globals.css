@@ -317,3 +317,18 @@ body {
 .spark-bar:hover {
   opacity: 1;
 }
+
+/* Typing indicator for conversational UI */
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--fg-secondary);
+  opacity: 0.4;
+  animation: typing 1.2s ease-in-out infinite;
+}
+
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
