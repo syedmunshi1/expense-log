@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { ArrowRight, Mic, MicOff, Sparkles, CircleCheck, AlertCircle } from "lucide-react";
 import { processInput, type ProcessResult } from "./actions";
 import { formatAmount } from "@/lib/currency";
+import { visualFor } from "@/lib/categories";
+import { CategoryIcon } from "./category-icon";
 
-// Minimal subset of the Web Speech API we actually use.
-// (TypeScript doesn't ship types for it.)
+// Minimal Web Speech API types
 type SpeechRecognitionAlternative = { transcript: string; confidence: number };
 type SpeechRecognitionResult = { 0: SpeechRecognitionAlternative; isFinal: boolean };
 type SpeechRecognitionResultList = {
@@ -38,12 +40,21 @@ function getSpeechRecognitionCtor():
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+const EXAMPLES = [
+  'lunch 250',
+  'auto 340 yesterday',
+  'groceries 1200 at dmart',
+  'how much did I spend on food this week?',
+  'total for this month',
+];
+
 export function InputConsole({ currency }: { currency: string }) {
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
   const [result, setResult] = useState<ProcessResult | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const recogRef = useRef<SpeechRecognitionInstance | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -51,21 +62,26 @@ export function InputConsole({ currency }: { currency: string }) {
     setMicSupported(getSpeechRecognitionCtor() !== null);
   }, []);
 
-  const submit = useCallback(
-    (value: string) => {
-      const v = value.trim();
-      if (!v) return;
-      startTransition(async () => {
-        const res = await processInput(v);
-        setResult(res);
-        if (res.kind === "logged") {
-          setText("");
-          inputRef.current?.focus();
-        }
-      });
-    },
-    [],
-  );
+  // Rotate placeholder examples
+  useEffect(() => {
+    const t = setInterval(() => {
+      setPlaceholderIdx((i) => (i + 1) % EXAMPLES.length);
+    }, 3200);
+    return () => clearInterval(t);
+  }, []);
+
+  const submit = useCallback((value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    startTransition(async () => {
+      const res = await processInput(v);
+      setResult(res);
+      if (res.kind === "logged") {
+        setText("");
+        inputRef.current?.focus();
+      }
+    });
+  }, []);
 
   const toggleMic = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
@@ -89,8 +105,6 @@ export function InputConsole({ currency }: { currency: string }) {
         else interim += r[0].transcript;
       }
       setText((prev) => {
-        // Replace text entirely during a listening session for a clean UX.
-        // Use finalTranscript when available, else the interim.
         return (finalTranscript + interim).trimStart() || prev;
       });
     };
@@ -100,7 +114,6 @@ export function InputConsole({ currency }: { currency: string }) {
     recog.onend = () => {
       setListening(false);
       recogRef.current = null;
-      // If we captured something, auto-submit.
       const captured = finalTranscript.trim();
       if (captured) submit(captured);
     };
@@ -113,6 +126,10 @@ export function InputConsole({ currency }: { currency: string }) {
     }
   }, [listening, submit]);
 
+  const placeholder = listening
+    ? "Listening…"
+    : `Try "${EXAMPLES[placeholderIdx]}"`;
+
   return (
     <div className="flex flex-col gap-3">
       <form
@@ -122,44 +139,55 @@ export function InputConsole({ currency }: { currency: string }) {
         }}
         className="flex flex-col gap-2"
       >
-        <input
-          ref={inputRef}
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder='Try "lunch 250" or "how much did I spend on food this week?"'
-          className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-base outline-none focus:border-[var(--accent)]"
-          disabled={isPending}
-          autoFocus
-        />
+        <div className="hero-input-wrap">
+          <input
+            ref={inputRef}
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={placeholder}
+            className="hero-input"
+            disabled={isPending}
+            autoFocus
+            aria-label="Expense input"
+          />
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="submit"
             disabled={isPending || !text.trim()}
-            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="btn btn-primary flex-1 sm:flex-none"
           >
-            {isPending ? "Working…" : "Submit"}
+            {isPending ? (
+              <>
+                <span className="spinner" /> Working…
+              </>
+            ) : (
+              <>
+                <Sparkles size={14} />
+                Submit
+                <ArrowRight size={14} />
+              </>
+            )}
           </button>
           {micSupported && (
             <button
               type="button"
               onClick={toggleMic}
               aria-pressed={listening}
-              className={`rounded-lg border border-[var(--border)] px-3 py-2 text-sm ${
-                listening
-                  ? "bg-[var(--danger)] text-white"
-                  : "bg-[var(--card)]"
-              }`}
+              aria-label={listening ? "Stop recording" : "Start voice input"}
+              className={`btn btn-ghost ${listening ? "mic-listening" : ""}`}
             >
-              {listening ? "◼ Stop" : "🎤 Speak"}
+              {listening ? <MicOff size={16} /> : <Mic size={16} />}
+              <span>{listening ? "Stop" : "Speak"}</span>
             </button>
           )}
-          {!micSupported && (
-            <span className="text-xs text-[var(--muted)]">
-              (Voice not supported in this browser)
-            </span>
-          )}
         </div>
+        {!micSupported && (
+          <p className="text-xs text-[color:var(--muted)]">
+            Voice input not supported in this browser — typing works fine.
+          </p>
+        )}
       </form>
 
       {result && <ResultCard result={result} currency={currency} />}
@@ -176,26 +204,53 @@ function ResultCard({
 }) {
   if (result.kind === "error") {
     return (
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm text-[var(--danger)]">
-        {result.message}
+      <div className="card fade-in flex items-start gap-3 px-4 py-3">
+        <AlertCircle
+          size={18}
+          className="mt-0.5 shrink-0"
+          color="var(--danger)"
+        />
+        <div className="text-sm text-[color:var(--fg)]">{result.message}</div>
       </div>
     );
   }
   if (result.kind === "logged") {
     const e = result.expense;
+    const v = visualFor(e.category);
     return (
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm">
-        <span className="text-[var(--success)]">✅ Logged</span>{" "}
-        <span className="font-mono">{formatAmount(e.amount, currency)}</span>
-        {" · "}
-        {e.category} · {e.description} · {e.date}
+      <div className="card-gradient fade-in flex items-center gap-3 px-4 py-3">
+        <div
+          className="flex h-10 w-10 items-center justify-center rounded-xl"
+          style={{ background: v.bg, color: v.color }}
+        >
+          <CategoryIcon name={v.icon} size={18} color={v.color} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-[color:var(--success)]">
+            <CircleCheck size={12} /> Logged
+          </div>
+          <div className="mt-0.5 truncate text-sm font-medium capitalize">
+            {e.description}
+          </div>
+          <div className="text-xs text-[color:var(--muted)]">
+            {e.category} · {e.date}
+          </div>
+        </div>
+        <div className="font-mono text-base font-semibold tabular-nums">
+          {formatAmount(e.amount, currency)}
+        </div>
       </div>
     );
   }
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm">
-      <p>{result.message}</p>
-      <p className="mt-1 text-xs text-[var(--muted)]">
+    <div className="card-gradient fade-in px-4 py-4">
+      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-[color:var(--accent)]">
+        <Sparkles size={12} /> Summary
+      </div>
+      <p className="text-sm leading-relaxed text-[color:var(--fg)]">
+        {result.message}
+      </p>
+      <p className="mt-2 text-xs text-[color:var(--muted)]">
         {result.count} matching expense{result.count === 1 ? "" : "s"}
       </p>
     </div>

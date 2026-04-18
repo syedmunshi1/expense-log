@@ -115,3 +115,75 @@ export async function getCurrency(): Promise<string> {
   const stored = await getSetting("currency");
   return stored ?? process.env.CURRENCY ?? "INR";
 }
+
+export type Stats = {
+  today: number;
+  week: number;
+  month: number;
+  topCategory: { name: string; amount: number } | null;
+  last7Days: { date: string; amount: number }[];
+};
+
+export async function getStats(): Promise<Stats> {
+  const rows = (await sql()`
+    SELECT to_char(date, 'YYYY-MM-DD') AS date, category, amount
+    FROM expenses
+    WHERE date >= CURRENT_DATE - INTERVAL '60 days'
+  `) as unknown as { date: string; category: string; amount: string }[];
+
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const d = String(today.getDate()).padStart(2, "0");
+  const todayISO = `${y}-${m}-${d}`;
+
+  // start of current week (Monday)
+  const monday = new Date(today);
+  const dow = monday.getDay(); // 0 = Sunday
+  const diff = dow === 0 ? -6 : 1 - dow;
+  monday.setDate(monday.getDate() + diff);
+  const weekStart = monday.toISOString().slice(0, 10);
+
+  const monthStart = `${y}-${m}-01`;
+
+  let todayTotal = 0;
+  let weekTotal = 0;
+  let monthTotal = 0;
+  const catTotals = new Map<string, number>();
+  const dayTotals = new Map<string, number>();
+
+  for (const r of rows) {
+    const amt = parseFloat(r.amount);
+    if (r.date === todayISO) todayTotal += amt;
+    if (r.date >= weekStart) weekTotal += amt;
+    if (r.date >= monthStart) {
+      monthTotal += amt;
+      catTotals.set(r.category, (catTotals.get(r.category) ?? 0) + amt);
+    }
+    dayTotals.set(r.date, (dayTotals.get(r.date) ?? 0) + amt);
+  }
+
+  let topCategory: { name: string; amount: number } | null = null;
+  for (const [name, amount] of catTotals) {
+    if (!topCategory || amount > topCategory.amount) {
+      topCategory = { name, amount };
+    }
+  }
+
+  // last 7 days array including zeros
+  const last7Days: { date: string; amount: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const iso = date.toISOString().slice(0, 10);
+    last7Days.push({ date: iso, amount: dayTotals.get(iso) ?? 0 });
+  }
+
+  return {
+    today: todayTotal,
+    week: weekTotal,
+    month: monthTotal,
+    topCategory,
+    last7Days,
+  };
+}

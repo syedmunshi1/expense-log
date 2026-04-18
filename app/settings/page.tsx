@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowLeft, LogOut, KeyRound, Coins, CheckCircle2 } from "lucide-react";
 import { getCurrency } from "@/lib/db";
 import { CURRENCY_SYMBOLS } from "@/lib/currency";
 import { logout, updateCurrency } from "../actions";
@@ -14,32 +15,46 @@ export default async function SettingsPage({
   const current = await getCurrency();
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-6 sm:py-10">
-      <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">⚙️ Settings</h1>
+    <main className="mx-auto max-w-xl px-4 pb-20 pt-6 sm:pt-10">
+      <header className="mb-8 flex items-center justify-between">
         <Link
           href="/"
-          className="rounded px-2 py-1 text-sm hover:bg-[var(--card)]"
+          className="btn btn-ghost"
+          aria-label="Back to home"
         >
-          ← Home
+          <ArrowLeft size={16} />
+          Back
         </Link>
+        <h1 className="text-lg font-semibold tracking-tight">Settings</h1>
+        <span className="w-[72px]" aria-hidden />
       </header>
 
-      <section className="mb-8 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-[var(--muted)]">
-          Currency
-        </h2>
+      <section className="card fade-in mb-4 p-5">
+        <div className="mb-4 flex items-center gap-3">
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-xl"
+            style={{
+              background: "rgba(99, 102, 241, 0.12)",
+              color: "var(--accent)",
+            }}
+          >
+            <Coins size={18} />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold">Currency</h2>
+            <p className="text-xs text-[color:var(--muted)]">
+              Currently{" "}
+              <span className="font-mono">
+                {current} {CURRENCY_SYMBOLS[current] ?? ""}
+              </span>
+            </p>
+          </div>
+        </div>
         <form action={updateCurrency} className="flex flex-col gap-3">
-          <label className="text-sm">
-            Current:{" "}
-            <span className="font-mono">
-              {current} {CURRENCY_SYMBOLS[current] ? `(${CURRENCY_SYMBOLS[current]})` : ""}
-            </span>
-          </label>
           <select
             name="currency"
             defaultValue={current}
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-3 py-2"
+            className="input"
           >
             {Object.keys(CURRENCY_SYMBOLS).map((code) => (
               <option key={code} value={code}>
@@ -47,37 +62,49 @@ export default async function SettingsPage({
               </option>
             ))}
           </select>
-          <button
-            type="submit"
-            className="self-start rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
-          >
+          <button type="submit" className="btn btn-primary self-start">
             Save
           </button>
           {params.saved && (
-            <p className="text-sm text-[var(--success)]">Saved.</p>
+            <p className="flex items-center gap-1.5 text-sm text-[color:var(--success)]">
+              <CheckCircle2 size={14} /> Saved.
+            </p>
           )}
           {params.error === "invalid-currency" && (
-            <p className="text-sm text-[var(--danger)]">
+            <p className="text-sm text-[color:var(--danger)]">
               Invalid currency code.
             </p>
           )}
         </form>
       </section>
 
-      <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-[var(--muted)]">
-          PIN
-        </h2>
-        <p className="mb-3 text-sm text-[var(--muted)]">
-          PIN is controlled by the <code>APP_PIN</code> environment variable.
-          To change it, update the variable in your deployment (e.g., Vercel
-          dashboard) and redeploy.
-        </p>
-        <form action={logout}>
-          <button
-            type="submit"
-            className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm"
+      <section className="card fade-in mb-4 p-5">
+        <div className="mb-3 flex items-center gap-3">
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-xl"
+            style={{
+              background: "rgba(239, 68, 68, 0.12)",
+              color: "var(--danger)",
+            }}
           >
+            <KeyRound size={18} />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold">PIN</h2>
+            <p className="text-xs text-[color:var(--muted)]">
+              Managed via <code className="font-mono">APP_PIN</code> environment variable.
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-[color:var(--fg-secondary)]">
+          To rotate your PIN, update the env var in Vercel and redeploy.
+        </p>
+      </section>
+
+      <section className="card fade-in p-5">
+        <form action={logout}>
+          <button type="submit" className="btn btn-ghost w-full sm:w-auto">
+            <LogOut size={14} />
             Log out
           </button>
         </form>
