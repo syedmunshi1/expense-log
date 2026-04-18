@@ -10,6 +10,7 @@ import {
   verifyPin,
 } from "@/lib/auth";
 import {
+  deleteExpense as deleteExpenseDb,
   fetchExpenses,
   getCurrency,
   getDistinctCategories,
@@ -136,6 +137,14 @@ export async function updateCurrency(formData: FormData): Promise<void> {
   revalidatePath("/");
   revalidatePath("/settings");
   redirect("/settings?saved=1");
+}
+
+export async function deleteExpense(id: number): Promise<void> {
+  await deleteExpenseDb(id);
+  revalidatePath("/");
+  revalidatePath("/fluid");
+  revalidatePath("/fluid/history");
+  revalidatePath("/fluid/analytics");
 }
 
 export async function getRecentForDisplay(): Promise<{

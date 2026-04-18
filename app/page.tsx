@@ -5,6 +5,7 @@ import { formatAmount } from "@/lib/currency";
 import { visualFor } from "@/lib/categories";
 import { CategoryIcon } from "./category-icon";
 import { InputConsole } from "./input-console";
+import { RecentList } from "./recent-list";
 
 export const dynamic = "force-dynamic";
 
@@ -126,38 +127,7 @@ export default async function Home() {
             </p>
           </div>
         ) : (
-          <ul className="space-y-2">
-            {expenses.map((e, i) => {
-              const v = visualFor(e.category);
-              return (
-                <li
-                  key={e.id}
-                  className="card row-enter flex items-center gap-3 px-4 py-3"
-                  style={{ animationDelay: `${i * 40}ms` }}
-                >
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-xl"
-                    style={{ background: v.bg, color: v.color }}
-                  >
-                    <CategoryIcon name={v.icon} size={18} color={v.color} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium capitalize">
-                      {e.description}
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-xs text-[color:var(--muted)]">
-                      <span>{formatRelativeDate(e.date)}</span>
-                      <span aria-hidden>·</span>
-                      <span>{e.category}</span>
-                    </div>
-                  </div>
-                  <div className="font-mono text-sm font-medium tabular-nums">
-                    {formatAmount(e.amount, currency)}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          <RecentList expenses={expenses} currency={currency} />
         )}
       </section>
     </main>
@@ -193,28 +163,4 @@ function TopCategoryBadge({
       <span className="font-medium">{name}</span>
     </div>
   );
-}
-
-function formatRelativeDate(iso: string): string {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = String(today.getMonth() + 1).padStart(2, "0");
-  const d = String(today.getDate()).padStart(2, "0");
-  const todayISO = `${y}-${m}-${d}`;
-
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yestISO = `${yesterday.getFullYear()}-${String(
-    yesterday.getMonth() + 1,
-  ).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
-
-  if (iso === todayISO) return "Today";
-  if (iso === yestISO) return "Yesterday";
-  // else: "Mon, Apr 15"
-  const date = new Date(iso + "T00:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
 }

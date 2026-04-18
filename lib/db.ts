@@ -27,6 +27,10 @@ export function sql(): NeonQueryFunction<false, false> {
   return cachedSql;
 }
 
+export async function deleteExpense(id: number): Promise<void> {
+  await sql()`DELETE FROM expenses WHERE id = ${id}`;
+}
+
 export async function insertExpense(input: {
   amount: number;
   description: string;
