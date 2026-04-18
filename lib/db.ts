@@ -1,4 +1,4 @@
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { neon, Pool, type NeonQueryFunction } from "@neondatabase/serverless";
 
 export type Expense = {
   id: number;
@@ -79,11 +79,17 @@ export async function fetchExpenses(
     LIMIT 500
   `;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = (await (sql() as any).query(text, params)) as
-    | Expense[]
-    | { rows: Expense[] };
-  return Array.isArray(result) ? result : result.rows;
+  // Use Pool for dynamic parameterized queries — neon() tagged template
+  // doesn't support the .query(text, params) calling convention.
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set.");
+  const pool = new Pool({ connectionString: url });
+  try {
+    const result = await pool.query<Expense>(text, params);
+    return result.rows;
+  } finally {
+    await pool.end();
+  }
 }
 
 export async function getRecent(limit = 10): Promise<Expense[]> {
