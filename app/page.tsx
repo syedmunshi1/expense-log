@@ -41,13 +41,21 @@ export default async function Home() {
             Speak or type. I&apos;ll do the math.
           </p>
         </div>
-        <Link
-          href="/settings"
-          aria-label="Settings"
-          className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elevated)] p-2 text-[color:var(--fg-secondary)] transition hover:border-[color:var(--border-strong)] hover:text-[color:var(--fg)]"
-        >
-          <Settings size={18} />
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/fluid"
+            className="rounded-full border border-[color:var(--border)] bg-[color:var(--bg-elevated)] px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)] transition hover:bg-[color:var(--accent)] hover:text-white"
+          >
+            Fluid UI
+          </Link>
+          <Link
+            href="/settings"
+            aria-label="Settings"
+            className="rounded-lg border border-[color:var(--border)] bg-[color:var(--bg-elevated)] p-2 text-[color:var(--fg-secondary)] transition hover:border-[color:var(--border-strong)] hover:text-[color:var(--fg)]"
+          >
+            <Settings size={18} />
+          </Link>
+        </div>
       </header>
 
       {/* Stats row */}
