@@ -38,6 +38,7 @@ Replace the existing PIN-based authentication with Google OAuth (Auth.js v5) to 
 - Session cookie signed with `AUTH_SECRET`
 - Google provider reads `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`
 - `signIn` callback enforces the email allowlist
+- No Google People API required — profile name and photo come from the OAuth token directly
 
 ---
 
@@ -48,7 +49,7 @@ Replace the existing PIN-based authentication with Google OAuth (Auth.js v5) to 
 | `AUTH_GOOGLE_ID` | Google OAuth client ID | New |
 | `AUTH_GOOGLE_SECRET` | Google OAuth client secret | New |
 | `AUTH_SECRET` | Signs session cookies (≥32 chars) | New |
-| `ALLOWED_EMAILS` | Comma-separated allowlist e.g. `a@gmail.com,b@gmail.com` | New |
+| `ALLOWED_EMAILS` | Comma-separated allowlist — spaces around commas are tolerated e.g. `a@gmail.com, b@gmail.com` | New |
 | `APP_PIN` | PIN auth — **removed** | Deleted |
 | `SESSION_SECRET` | HMAC cookie secret — **removed** | Deleted |
 | `DATABASE_URL` | Neon connection string | Unchanged |
@@ -96,26 +97,36 @@ app/demo/
   page.tsx                               Chat UI (userId = 'demo')
   history/page.tsx                       History (userId = 'demo')
   analytics/page.tsx                     Analytics (userId = 'demo')
-  actions.ts                             Server actions hardcoded to userId = 'demo'
+  actions.ts                             All server actions hardcoded to userId = 'demo',
+                                         including deleteExpense
 ```
 
 ### Modified files
 
 ```
-proxy.ts                    Replace HMAC check with Auth.js middleware export
-lib/db.ts                   All functions gain userId: string parameter
-app/actions.ts              Session guard at top; submitPin removed; logout → signOut()
-app/login/page.tsx          PIN form → Google sign-in button + Demo link
-app/page.tsx                Add Demo link in header
-app/fluid/page.tsx          Add Demo link in header
+proxy.ts                         Replace HMAC check with Auth.js middleware export;
+                                 add /api/auth to PUBLIC_PATHS to prevent redirect loop
+lib/db.ts                        All query/mutation functions gain userId: string param;
+                                 getSetting made internal-only (only called via getCurrency)
+app/actions.ts                   Session guard on ALL actions:
+                                   processInput, deleteExpense, getRecentForDisplay,
+                                   updateCurrency, logout → signOut()
+                                 submitPin removed entirely
+app/login/page.tsx               PIN form → Google sign-in button + "Try demo" link;
+                                 AccessDenied error state added
+app/settings/page.tsx            Remove PIN section; add signed-in account card
+                                 (shows Google profile email/photo)
+app/page.tsx                     Add Demo link in header
+app/fluid/page.tsx               Add Demo link in header
 app/fluid/history/
-  history-list.tsx          Show Google profile photo in avatar slot
+  history-list.tsx               Show Google profile photo in avatar slot
+app/recent-list.tsx              deleteExpense import updated (now requires auth)
 ```
 
 ### Deleted files
 
 ```
-lib/auth.ts                 HMAC token helpers + PIN verify — entirely removed
+lib/auth.ts                      HMAC token helpers + PIN verify — entirely removed
 ```
 
 ---
@@ -140,7 +151,7 @@ User visits any protected route
 
 ```
 User visits /demo (or clicks Demo link)
-  → proxy.ts skips auth (PUBLIC_PATHS includes /demo)
+  → proxy.ts skips auth (/demo and /api/auth are in PUBLIC_PATHS)
   → Demo layout renders banner: "Demo mode — data is shared"
   → All server actions use userId = 'demo'
   → User can log/query/delete expenses — changes visible to all demo visitors
@@ -170,11 +181,32 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 ### `proxy.ts`
 
 ```ts
-export { auth as proxy } from "@/auth";
-export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)" ] };
+import { auth } from "@/auth";
+import { NextResponse } from "next/server";
+
+// /api/auth/* must be public so OAuth callback isn't intercepted before the
+// session cookie is set (would cause a redirect loop).
+const PUBLIC_PATHS = ["/login", "/demo", "/api/auth"];
+
+export const proxy = auth((req) => {
+  const { pathname } = req.nextUrl;
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return NextResponse.next();
+  }
+  if (req.auth) return NextResponse.next();
+  const loginUrl = new URL("/login", req.url);
+  if (pathname !== "/") loginUrl.searchParams.set("from", pathname);
+  return NextResponse.redirect(loginUrl);
+});
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)" ],
+};
 ```
 
-### `app/actions.ts` — session guard pattern
+### `app/actions.ts` — session guard pattern (applied to ALL actions)
+
+Actions requiring auth: `processInput`, `deleteExpense`, `getRecentForDisplay`, `updateCurrency`, `logout`.
 
 ```ts
 export async function processInput(input: string): Promise<ProcessResult> {
@@ -185,15 +217,13 @@ export async function processInput(input: string): Promise<ProcessResult> {
 }
 ```
 
-### `lib/db.ts` — function signature change (example)
+### `app/demo/actions.ts` — hardcoded userId
 
-```ts
-// Before
-export async function getRecent(limit = 10): Promise<Expense[]>
+Mirrors every action in `app/actions.ts` but with `const userId = 'demo'` hardcoded. No session check. Includes: `processInput`, `deleteExpense`, `getRecentForDisplay`. Does not include `updateCurrency` or `logout` (demo users have no settings and no session to clear).
 
-// After
-export async function getRecent(userId: string, limit = 10): Promise<Expense[]>
-```
+### `lib/db.ts` — userId threading
+
+`getSetting` is made private (unexported). It is only called internally by `getCurrency(userId)`, which passes the userId through. This prevents callers from accidentally querying settings without a user filter now that the primary key is composite.
 
 ### Demo banner (`app/demo/layout.tsx`)
 
@@ -206,6 +236,11 @@ Persistent banner at the very top of every demo page:
 - Below the card: "Just browsing? [Try the demo →]" link to `/demo`
 - Error state for `AccessDenied`: "Your Google account isn't on the access list."
 
+### Settings page
+
+- Remove the PIN section (references `APP_PIN` which no longer exists)
+- Add a read-only "Account" card showing the signed-in Google email and profile photo
+
 ---
 
 ## `lib/db.ts` Functions — userId Param Addition
@@ -213,15 +248,16 @@ Persistent banner at the very top of every demo page:
 | Function | Change |
 |---|---|
 | `insertExpense` | Add `userId` to input object, insert into column |
-| `deleteExpense` | Add `userId` param, add `AND user_id = $N` to WHERE |
+| `deleteExpense` | Add `userId` param, add `AND user_id = $N` to WHERE (prevents cross-user deletes) |
 | `fetchExpenses` | Add `userId` param, filter by user |
 | `getRecent` | Add `userId` param, filter by user |
 | `getDistinctCategories` | Add `userId` param, filter by user |
-| `getStats` | Add `userId` param, filter by user |
+| `getStats` | Add `userId` param, filter by user — queries `expenses` directly, will aggregate across all users without this fix |
 | `getExpensesByMonth` | Add `userId` param, filter by user |
-| `getAnalytics` | Add `userId` param, filter by user |
-| `getCurrency` | Add `userId` param, filter by user |
-| `setSetting` | Add `userId` param, insert/update by (key, user_id) |
+| `getAnalytics` | Add `userId` param, filter by user — queries `expenses` directly, will leak cross-user data on `/fluid/analytics` without this fix |
+| `getCurrency` | Add `userId` param, pass through to `getSetting` |
+| `setSetting` | Add `userId` param, insert/update by (key, user_id); **update `ON CONFLICT (key)` → `ON CONFLICT (key, user_id)`** to match new composite primary key — old clause causes a Postgres error after migration |
+| `getSetting` | Add `userId` param; make unexported (internal use only) |
 
 ---
 
@@ -229,28 +265,32 @@ Persistent banner at the very top of every demo page:
 
 | Scenario | Behaviour |
 |---|---|
-| Google account not on allowlist | Redirect to `/login?error=AccessDenied`; show message |
-| Session missing in server action | Throw `"Not authenticated"` (middleware should prevent this) |
+| Google account not on allowlist | Redirect to `/login?error=AccessDenied`; show "not on access list" message |
+| Session missing in server action | Throw `"Not authenticated"` (middleware prevents this in practice) |
 | `AUTH_SECRET` not set | Auth.js throws at startup |
 | `ALLOWED_EMAILS` empty | All Google accounts rejected (fail-safe) |
+| Cross-user delete attempt | `deleteExpense` WHERE includes `user_id` — wrong-user rows simply aren't found |
 
 ---
 
 ## What Is Not Changed
 
-- All expense parsing, summarisation, and AI logic (`lib/parser.ts`, `lib/summariser.ts`)
+- All expense parsing, summarisation, and AI logic (`lib/parser.ts`, `lib/summarizer.ts`)
 - Both UI themes (original `/` and Fluid Ledger `/fluid`)
-- The Settings page (currency change) — just the underlying action gains a userId guard
 - Vercel deployment config
 
 ---
 
 ## Setup Steps for Developer
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → Create OAuth 2.0 Client ID (Web application)
-2. Add authorised redirect URI: `https://<your-vercel-domain>/api/auth/callback/google` (and `http://localhost:3000/api/auth/callback/google` for local dev)
-3. Copy Client ID → `AUTH_GOOGLE_ID`, Client Secret → `AUTH_GOOGLE_SECRET`
-4. Generate `AUTH_SECRET`: `openssl rand -base64 32`
-5. Set `ALLOWED_EMAILS` to comma-separated list of permitted Gmail addresses
-6. Run `db/migrate-add-user-id.sql` against Neon
-7. Deploy — remove `APP_PIN` and `SESSION_SECRET` from Vercel env vars
+1. Install the new dependency: `npm install next-auth@beta`
+2. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → Create OAuth 2.0 Client ID (Web application). **No additional Google APIs need to be enabled** — profile name and photo are returned directly in the OAuth token.
+3. Add authorised redirect URIs:
+   - `https://<your-vercel-domain>/api/auth/callback/google`
+   - `http://localhost:3000/api/auth/callback/google` (local dev)
+4. Copy Client ID → `AUTH_GOOGLE_ID`, Client Secret → `AUTH_GOOGLE_SECRET`
+5. Generate `AUTH_SECRET` with `openssl rand -base64 32` — the output is already ≥32 characters; do not shorten it manually
+6. Set `ALLOWED_EMAILS` to comma-separated list of permitted Gmail addresses (spaces around commas are fine)
+7. Set `CURRENCY` env var (e.g. `INR`) — the demo chat uses `getCurrency('demo')` which falls back to this env var if no per-demo currency row exists in settings
+8. Run `db/migrate-add-user-id.sql` against Neon
+9. Deploy — remove `APP_PIN` and `SESSION_SECRET` from Vercel env vars
