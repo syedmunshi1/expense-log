@@ -1,31 +1,21 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySessionToken } from "./lib/auth";
+import { auth } from "@/auth";
+import { NextResponse } from "next/server";
 
-// Pages that do NOT require auth.
-const PUBLIC_PATHS = ["/login"];
+// /api/auth/* MUST be public — the OAuth callback sets the session cookie
+// here, so intercepting it before the cookie is written causes a redirect loop.
+const PUBLIC_PATHS = ["/login", "/demo", "/api/auth"];
 
-export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
+export const proxy = auth((req) => {
+  const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
-
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (await verifySessionToken(token)) {
-    return NextResponse.next();
-  }
-
-  const loginUrl = new URL("/login", request.url);
-  if (pathname !== "/") {
-    loginUrl.searchParams.set("from", pathname);
-  }
+  if (req.auth) return NextResponse.next();
+  const loginUrl = new URL("/login", req.url);
+  if (pathname !== "/") loginUrl.searchParams.set("from", pathname);
   return NextResponse.redirect(loginUrl);
-}
+});
 
 export const config = {
-  matcher: [
-    // Run on all paths except Next.js internals and static files
-    "/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)" ],
 };
