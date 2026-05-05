@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowLeft, LogOut, KeyRound, Coins, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, LogOut, Coins, CheckCircle2 } from "lucide-react";
 import { getCurrency } from "@/lib/db";
 import { CURRENCY_SYMBOLS } from "@/lib/currency";
 import { logout, updateCurrency } from "../actions";
+import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,9 @@ export default async function SettingsPage({
   searchParams: Promise<{ saved?: string; error?: string }>;
 }) {
   const params = await searchParams;
-  const current = await getCurrency();
+  const session = await auth();
+  const userId = session?.user?.email ?? "";
+  const current = await getCurrency(userId);
 
   return (
     <main className="mx-auto max-w-xl px-4 pb-20 pt-6 sm:pt-10">
@@ -79,26 +82,24 @@ export default async function SettingsPage({
       </section>
 
       <section className="card fade-in mb-4 p-5">
-        <div className="mb-3 flex items-center gap-3">
-          <div
-            className="flex h-10 w-10 items-center justify-center rounded-xl"
-            style={{
-              background: "rgba(239, 68, 68, 0.12)",
-              color: "var(--danger)",
-            }}
-          >
-            <KeyRound size={18} />
-          </div>
+        <div className="flex items-center gap-3">
+          {session?.user?.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={session.user.image}
+              alt="Profile"
+              className="h-10 w-10 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[color:var(--bg-elevated)] text-lg">
+              👤
+            </div>
+          )}
           <div>
-            <h2 className="text-sm font-semibold">PIN</h2>
-            <p className="text-xs text-[color:var(--muted)]">
-              Managed via <code className="font-mono">APP_PIN</code> environment variable.
-            </p>
+            <div className="text-sm font-semibold">{session?.user?.name ?? "Signed in"}</div>
+            <div className="text-xs text-[color:var(--muted)]">{session?.user?.email}</div>
           </div>
         </div>
-        <p className="text-xs text-[color:var(--fg-secondary)]">
-          To rotate your PIN, update the env var in Vercel and redeploy.
-        </p>
       </section>
 
       <section className="card fade-in p-5">

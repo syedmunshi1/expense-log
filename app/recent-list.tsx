@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { Trash2, AlertTriangle } from "lucide-react";
-import { deleteExpense } from "./actions";
 import { formatAmount } from "@/lib/currency";
 import { visualFor } from "@/lib/categories";
 import { CategoryIcon } from "./category-icon";
@@ -32,9 +31,11 @@ function formatRelativeDate(iso: string): string {
 export function RecentList({
   expenses: initial,
   currency,
+  deleteExpenseAction,
 }: {
   expenses: Expense[];
   currency: string;
+  deleteExpenseAction: (id: number) => Promise<void>;
 }) {
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -47,7 +48,7 @@ export function RecentList({
     setDeletingId(id);
     setConfirmId(null);
     startTransition(async () => {
-      await deleteExpense(id);
+      await deleteExpenseAction(id);
       setRemovedIds((prev) => new Set([...prev, id]));
       setDeletingId(null);
     });

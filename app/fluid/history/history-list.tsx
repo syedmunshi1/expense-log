@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { Trash2, AlertTriangle } from "lucide-react";
-import { deleteExpense } from "@/app/actions";
 import { formatAmount } from "@/lib/currency";
 import { visualFor } from "@/lib/categories";
 import { CategoryIcon } from "@/app/category-icon";
@@ -11,9 +10,11 @@ import type { MonthGroup } from "@/lib/db";
 export function HistoryList({
   groups,
   currency,
+  deleteExpenseAction,
 }: {
   groups: MonthGroup[];
   currency: string;
+  deleteExpenseAction: (id: number) => Promise<void>;
 }) {
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -32,7 +33,7 @@ export function HistoryList({
     setDeletingId(id);
     setConfirmId(null);
     startTransition(async () => {
-      await deleteExpense(id);
+      await deleteExpenseAction(id);
       setRemovedIds((prev) => new Set([...prev, id]));
       setDeletingId(null);
     });

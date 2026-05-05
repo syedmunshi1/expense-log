@@ -8,7 +8,7 @@ import {
   useTransition,
 } from "react";
 import { Send, Mic } from "lucide-react";
-import { processInput, type ProcessResult } from "@/app/actions";
+import type { ProcessResult } from "@/app/actions";
 import { formatAmount } from "@/lib/currency";
 import { visualFor } from "@/lib/categories";
 import { CategoryIcon } from "@/app/category-icon";
@@ -41,7 +41,13 @@ function nowTime() {
   return new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-export function FluidChat({ currency }: { currency: string }) {
+export function FluidChat({
+  currency,
+  processInputAction,
+}: {
+  currency: string;
+  processInputAction: (input: string) => Promise<ProcessResult>;
+}) {
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isPending, startTransition] = useTransition();
@@ -63,7 +69,7 @@ export function FluidChat({ currency }: { currency: string }) {
     setMessages((prev) => [...prev, { id: ++idRef.current, role: "user", text: v, time }]);
     setText("");
     startTransition(async () => {
-      const res = await processInput(v);
+      const res = await processInputAction(v);
       setMessages((prev) => [
         ...prev,
         { id: ++idRef.current, role: "assistant", result: res, time: nowTime() },

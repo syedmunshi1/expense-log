@@ -27,8 +27,32 @@ export function sql(): NeonQueryFunction<false, false> {
   return cachedSql;
 }
 
-export async function deleteExpense(id: number): Promise<void> {
-  await sql()`DELETE FROM expenses WHERE id = ${id}`;
+// getSetting — unexported. Only called via getCurrency(userId) so callers
+// cannot accidentally query settings without a user filter.
+async function getSetting(key: string, userId: string): Promise<string | null> {
+  const rows = (await sql()`
+    SELECT value FROM settings WHERE key = ${key} AND user_id = ${userId}
+  `) as unknown as { value: string }[];
+  return rows[0]?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string, userId: string): Promise<void> {
+  // ON CONFLICT now targets the composite PK (key, user_id) added in the migration.
+  // The old single-column ON CONFLICT (key) would fail after migration.
+  await sql()`
+    INSERT INTO settings (key, value, user_id) VALUES (${key}, ${value}, ${userId})
+    ON CONFLICT (key, user_id) DO UPDATE SET value = EXCLUDED.value
+  `;
+}
+
+export async function getCurrency(userId: string): Promise<string> {
+  const stored = await getSetting("currency", userId);
+  return stored ?? process.env.CURRENCY ?? "INR";
+}
+
+export async function deleteExpense(id: number, userId: string): Promise<void> {
+  // WHERE includes user_id — cross-user deletes silently no-op rather than error
+  await sql()`DELETE FROM expenses WHERE id = ${id} AND user_id = ${userId}`;
 }
 
 export async function insertExpense(input: {
@@ -36,23 +60,27 @@ export async function insertExpense(input: {
   description: string;
   category: string;
   date: string;
+  userId: string;
 }): Promise<Expense> {
   const rows = (await sql()`
-    INSERT INTO expenses (amount, description, category, date)
-    VALUES (${input.amount}, ${input.description}, ${input.category}, ${input.date})
+    INSERT INTO expenses (amount, description, category, date, user_id)
+    VALUES (${input.amount}, ${input.description}, ${input.category}, ${input.date}, ${input.userId})
     RETURNING id, amount, description, category, to_char(date, 'YYYY-MM-DD') AS date, created_at
   `) as unknown as Expense[];
   return rows[0];
 }
 
 export async function fetchExpenses(
+  userId: string,
   filters: ExpenseFilters,
 ): Promise<Expense[]> {
-  // Build dynamic WHERE clauses while keeping parameterized queries.
-  // @neondatabase/serverless supports tagged template literal interpolation
-  // for values but not for structural SQL — so we use the .query(text, params) form.
   const conditions: string[] = [];
   const params: (string | number)[] = [];
+
+  // userId is always pushed first — conditions is never empty after this point,
+  // so the WHERE clause is always present.
+  params.push(userId);
+  conditions.push(`user_id = $${params.length}`);
 
   if (filters.category) {
     params.push(filters.category);
@@ -61,7 +89,6 @@ export async function fetchExpenses(
   if (filters.keyword) {
     params.push(`%${filters.keyword}%`);
     const idx = params.length;
-    // Search both description and category, case-insensitive
     conditions.push(`(description ILIKE $${idx} OR category ILIKE $${idx})`);
   }
   if (filters.start_date) {
@@ -73,7 +100,7 @@ export async function fetchExpenses(
     conditions.push(`date <= $${params.length}`);
   }
 
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
   const text = `
     SELECT id, amount, description, category,
            to_char(date, 'YYYY-MM-DD') AS date, created_at
@@ -83,8 +110,6 @@ export async function fetchExpenses(
     LIMIT 500
   `;
 
-  // Use Pool for dynamic parameterized queries — neon() tagged template
-  // doesn't support the .query(text, params) calling convention.
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set.");
   const pool = new Pool({ connectionString: url });
@@ -96,41 +121,23 @@ export async function fetchExpenses(
   }
 }
 
-export async function getRecent(limit = 10): Promise<Expense[]> {
+export async function getRecent(userId: string, limit = 10): Promise<Expense[]> {
   const rows = (await sql()`
     SELECT id, amount, description, category,
            to_char(date, 'YYYY-MM-DD') AS date, created_at
     FROM expenses
+    WHERE user_id = ${userId}
     ORDER BY created_at DESC
     LIMIT ${limit}
   `) as unknown as Expense[];
   return rows;
 }
 
-export async function getDistinctCategories(): Promise<string[]> {
+export async function getDistinctCategories(userId: string): Promise<string[]> {
   const rows = (await sql()`
-    SELECT DISTINCT category FROM expenses ORDER BY category
+    SELECT DISTINCT category FROM expenses WHERE user_id = ${userId} ORDER BY category
   `) as unknown as { category: string }[];
   return rows.map((r) => r.category);
-}
-
-export async function getSetting(key: string): Promise<string | null> {
-  const rows = (await sql()`
-    SELECT value FROM settings WHERE key = ${key}
-  `) as unknown as { value: string }[];
-  return rows[0]?.value ?? null;
-}
-
-export async function setSetting(key: string, value: string): Promise<void> {
-  await sql()`
-    INSERT INTO settings (key, value) VALUES (${key}, ${value})
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-  `;
-}
-
-export async function getCurrency(): Promise<string> {
-  const stored = await getSetting("currency");
-  return stored ?? process.env.CURRENCY ?? "INR";
 }
 
 export type Stats = {
@@ -141,11 +148,12 @@ export type Stats = {
   last7Days: { date: string; amount: number }[];
 };
 
-export async function getStats(): Promise<Stats> {
+export async function getStats(userId: string): Promise<Stats> {
   const rows = (await sql()`
     SELECT to_char(date, 'YYYY-MM-DD') AS date, category, amount
     FROM expenses
     WHERE date >= CURRENT_DATE - INTERVAL '60 days'
+      AND user_id = ${userId}
   `) as unknown as { date: string; category: string; amount: string }[];
 
   const today = new Date();
@@ -154,18 +162,14 @@ export async function getStats(): Promise<Stats> {
   const d = String(today.getDate()).padStart(2, "0");
   const todayISO = `${y}-${m}-${d}`;
 
-  // start of current week (Monday)
   const monday = new Date(today);
-  const dow = monday.getDay(); // 0 = Sunday
+  const dow = monday.getDay();
   const diff = dow === 0 ? -6 : 1 - dow;
   monday.setDate(monday.getDate() + diff);
   const weekStart = monday.toISOString().slice(0, 10);
-
   const monthStart = `${y}-${m}-01`;
 
-  let todayTotal = 0;
-  let weekTotal = 0;
-  let monthTotal = 0;
+  let todayTotal = 0, weekTotal = 0, monthTotal = 0;
   const catTotals = new Map<string, number>();
   const dayTotals = new Map<string, number>();
 
@@ -182,12 +186,9 @@ export async function getStats(): Promise<Stats> {
 
   let topCategory: { name: string; amount: number } | null = null;
   for (const [name, amount] of catTotals) {
-    if (!topCategory || amount > topCategory.amount) {
-      topCategory = { name, amount };
-    }
+    if (!topCategory || amount > topCategory.amount) topCategory = { name, amount };
   }
 
-  // last 7 days array including zeros
   const last7Days: { date: string; amount: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const date = new Date(today);
@@ -196,46 +197,36 @@ export async function getStats(): Promise<Stats> {
     last7Days.push({ date: iso, amount: dayTotals.get(iso) ?? 0 });
   }
 
-  return {
-    today: todayTotal,
-    week: weekTotal,
-    month: monthTotal,
-    topCategory,
-    last7Days,
-  };
+  return { today: todayTotal, week: weekTotal, month: monthTotal, topCategory, last7Days };
 }
 
 // ─── Fluid Ledger helpers ──────────────────────────────────────────────────
 
 export type MonthGroup = {
-  label: string; // e.g. "April 2026"
+  label: string;
   expenses: Expense[];
 };
 
-/** All expenses grouped by calendar month, newest first. */
-export async function getExpensesByMonth(): Promise<MonthGroup[]> {
+export async function getExpensesByMonth(userId: string): Promise<MonthGroup[]> {
   const rows = (await sql()`
     SELECT id, amount, description, category,
            to_char(date, 'YYYY-MM-DD') AS date, created_at
     FROM expenses
+    WHERE user_id = ${userId}
     ORDER BY date DESC, id DESC
     LIMIT 300
   `) as unknown as Expense[];
 
   const groups = new Map<string, Expense[]>();
   for (const e of rows) {
-    const [y, m] = e.date.split("-");
-    const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString(
-      "en-US",
-      { month: "long", year: "numeric" },
-    );
+    const [yr, mo] = e.date.split("-");
+    const label = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString("en-US", {
+      month: "long", year: "numeric",
+    });
     if (!groups.has(label)) groups.set(label, []);
     groups.get(label)!.push(e);
   }
-  return [...groups.entries()].map(([label, expenses]) => ({
-    label,
-    expenses,
-  }));
+  return [...groups.entries()].map(([label, expenses]) => ({ label, expenses }));
 }
 
 export type Analytics = {
@@ -243,28 +234,27 @@ export type Analytics = {
   prevMonthTotal: number;
   topCategory: { name: string; amount: number } | null;
   dailyAverage: number;
-  weeklyTotals: { label: string; amount: number }[]; // W1..W4
+  weeklyTotals: { label: string; amount: number }[];
   categoryBreakdown: { name: string; amount: number; pct: number }[];
 };
 
-/** Analytics for the current month (+ previous for comparison). */
-export async function getAnalytics(): Promise<Analytics> {
+export async function getAnalytics(userId: string): Promise<Analytics> {
   const rows = (await sql()`
     SELECT to_char(date, 'YYYY-MM-DD') AS date, category, amount
     FROM expenses
     WHERE date >= date_trunc('month', CURRENT_DATE) - INTERVAL '1 month'
+      AND user_id = ${userId}
   `) as unknown as { date: string; category: string; amount: string }[];
 
   const now = new Date();
   const y = now.getFullYear();
-  const m = now.getMonth(); // 0-based
+  const m = now.getMonth();
   const monthStart = new Date(y, m, 1).toISOString().slice(0, 10);
   const prevMonthStart = new Date(y, m - 1, 1).toISOString().slice(0, 10);
 
-  let monthTotal = 0;
-  let prevMonthTotal = 0;
+  let monthTotal = 0, prevMonthTotal = 0;
   const catMap = new Map<string, number>();
-  const weekMap = new Map<number, number>(); // week-of-month → total
+  const weekMap = new Map<number, number>();
 
   for (const r of rows) {
     const amt = parseFloat(r.amount);
@@ -292,17 +282,7 @@ export async function getAnalytics(): Promise<Analytics> {
     catBreakdown.push({ name, amount, pct: monthTotal > 0 ? Math.round((amount / monthTotal) * 100) : 0 });
   }
 
-  const weeklyTotals = [1, 2, 3, 4].map((w) => ({
-    label: `W${w}`,
-    amount: weekMap.get(w) ?? 0,
-  }));
+  const weeklyTotals = [1, 2, 3, 4].map((w) => ({ label: `W${w}`, amount: weekMap.get(w) ?? 0 }));
 
-  return {
-    monthTotal,
-    prevMonthTotal,
-    topCategory,
-    dailyAverage,
-    weeklyTotals,
-    categoryBreakdown: catBreakdown,
-  };
+  return { monthTotal, prevMonthTotal, topCategory, dailyAverage, weeklyTotals, categoryBreakdown: catBreakdown };
 }

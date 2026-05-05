@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { ArrowUp, Mic, MicOff, CircleCheck, Sparkles } from "lucide-react";
-import { processInput, type ProcessResult } from "./actions";
+import type { ProcessResult } from "./actions";
 import { formatAmount } from "@/lib/currency";
 import { visualFor } from "@/lib/categories";
 import { CategoryIcon } from "./category-icon";
@@ -52,7 +52,13 @@ type Message =
   | { id: number; role: "user"; text: string }
   | { id: number; role: "assistant"; result: ProcessResult };
 
-export function InputConsole({ currency }: { currency: string }) {
+export function InputConsole({
+  currency,
+  processInputAction,
+}: {
+  currency: string;
+  processInputAction: (input: string) => Promise<ProcessResult>;
+}) {
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
@@ -91,7 +97,7 @@ export function InputConsole({ currency }: { currency: string }) {
     setText("");
 
     startTransition(async () => {
-      const res = await processInput(v);
+      const res = await processInputAction(v);
       const assistantId = ++idRef.current;
       setMessages((prev) => [
         ...prev,

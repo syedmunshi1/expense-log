@@ -3,11 +3,15 @@ import Link from "next/link";
 import { getCurrency, getStats } from "@/lib/db";
 import { formatAmount } from "@/lib/currency";
 import { FluidChat } from "./fluid-chat";
+import { auth } from "@/auth";
+import { processInput } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function FluidHome() {
-  const [currency, stats] = await Promise.all([getCurrency(), getStats()]);
+  const session = await auth();
+  const userId = session?.user?.email ?? "";
+  const [currency, stats] = await Promise.all([getCurrency(userId), getStats(userId)]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -21,20 +25,29 @@ export default async function FluidHome() {
           background: "#f8fafa",
         }}
       >
-        <div
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            background: "#eaefef",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "18px",
-          }}
-        >
-          👤
-        </div>
+        {session?.user?.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={session.user.image}
+            alt={session.user.name ?? "Profile"}
+            style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "#eaefef",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "18px",
+            }}
+          >
+            👤
+          </div>
+        )}
         <span
           style={{
             fontFamily: "'Plus Jakarta Sans', sans-serif",
@@ -65,6 +78,20 @@ export default async function FluidHome() {
             }}
           >
             SWITCH UI
+          </Link>
+          <Link
+            href="/demo"
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "#596061",
+              background: "#eaefef",
+              padding: "4px 10px",
+              borderRadius: "999px",
+              textDecoration: "none",
+            }}
+          >
+            DEMO
           </Link>
         </div>
       </div>
@@ -98,7 +125,7 @@ export default async function FluidHome() {
       </div>
 
       {/* Chat area */}
-      <FluidChat currency={currency} />
+      <FluidChat currency={currency} processInputAction={processInput} />
     </div>
   );
 }

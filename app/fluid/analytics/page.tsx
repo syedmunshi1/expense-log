@@ -3,11 +3,14 @@ import { getAnalytics, getCurrency } from "@/lib/db";
 import { formatAmount } from "@/lib/currency";
 import { visualFor } from "@/lib/categories";
 import { CategoryIcon } from "@/app/category-icon";
+import { auth } from "@/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
-  const [analytics, currency] = await Promise.all([getAnalytics(), getCurrency()]);
+  const session = await auth();
+  const userId = session?.user?.email ?? "";
+  const [analytics, currency] = await Promise.all([getAnalytics(userId), getCurrency(userId)]);
   const {
     monthTotal,
     prevMonthTotal,

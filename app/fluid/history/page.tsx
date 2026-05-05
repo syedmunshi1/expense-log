@@ -2,13 +2,17 @@ import { Settings } from "lucide-react";
 import Link from "next/link";
 import { getExpensesByMonth, getCurrency } from "@/lib/db";
 import { HistoryList } from "./history-list";
+import { auth } from "@/auth";
+import { deleteExpense } from "@/app/actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function HistoryPage() {
+  const session = await auth();
+  const userId = session?.user?.email ?? "";
   const [groups, currency] = await Promise.all([
-    getExpensesByMonth(),
-    getCurrency(),
+    getExpensesByMonth(userId),
+    getCurrency(userId),
   ]);
 
   return (
@@ -22,20 +26,29 @@ export default async function HistoryPage() {
           padding: "16px 20px 12px",
         }}
       >
-        <div
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            background: "#eaefef",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "18px",
-          }}
-        >
-          👤
-        </div>
+        {session?.user?.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={session.user.image}
+            alt={session.user.name ?? "Profile"}
+            style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: "50%",
+              background: "#eaefef",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "18px",
+            }}
+          >
+            👤
+          </div>
+        )}
         <span
           style={{
             fontFamily: "'Plus Jakarta Sans', sans-serif",
@@ -69,7 +82,7 @@ export default async function HistoryPage() {
         </p>
       </div>
 
-      <HistoryList groups={groups} currency={currency} />
+      <HistoryList groups={groups} currency={currency} deleteExpenseAction={deleteExpense} />
     </div>
   );
 }

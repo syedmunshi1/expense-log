@@ -6,14 +6,18 @@ import { visualFor } from "@/lib/categories";
 import { CategoryIcon } from "./category-icon";
 import { InputConsole } from "./input-console";
 import { RecentList } from "./recent-list";
+import { auth } from "@/auth";
+import { deleteExpense, processInput } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  const session = await auth();
+  const userId = session?.user?.email ?? "";
   const [expenses, currency, stats] = await Promise.all([
-    getRecent(10),
-    getCurrency(),
-    getStats(),
+    getRecent(userId, 10),
+    getCurrency(userId),
+    getStats(userId),
   ]);
 
   const max7 = Math.max(1, ...stats.last7Days.map((d) => d.amount));
@@ -48,6 +52,12 @@ export default async function Home() {
             className="rounded-full border border-[color:var(--border)] bg-[color:var(--bg-elevated)] px-3 py-1.5 text-xs font-semibold text-[color:var(--accent)] transition hover:bg-[color:var(--accent)] hover:text-white"
           >
             Fluid UI
+          </Link>
+          <Link
+            href="/demo"
+            className="rounded-full border border-[color:var(--border)] bg-[color:var(--bg-elevated)] px-3 py-1.5 text-xs font-semibold text-[color:var(--fg-secondary)] transition hover:bg-[color:var(--accent)] hover:text-white"
+          >
+            Demo
           </Link>
           <Link
             href="/settings"
@@ -100,7 +110,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <InputConsole currency={currency} />
+      <InputConsole currency={currency} processInputAction={processInput} />
 
       <section className="mt-8">
         <h2 className="stat-label mb-3">Recent</h2>
@@ -127,7 +137,7 @@ export default async function Home() {
             </p>
           </div>
         ) : (
-          <RecentList expenses={expenses} currency={currency} />
+          <RecentList expenses={expenses} currency={currency} deleteExpenseAction={deleteExpense} />
         )}
       </section>
     </main>

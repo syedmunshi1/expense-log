@@ -4,14 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MessageSquare, History, BarChart2 } from "lucide-react";
 
-const TABS = [
-  { href: "/fluid", icon: MessageSquare, label: "Chat" },
-  { href: "/fluid/history", icon: History, label: "History" },
-  { href: "/fluid/analytics", icon: BarChart2, label: "Analytics" },
-];
-
-export function FluidNav() {
+export function FluidNav({ basePath = "/fluid" }: { basePath?: string }) {
   const path = usePathname();
+
+  const TABS = [
+    { href: basePath, icon: MessageSquare, label: "Chat" },
+    { href: `${basePath}/history`, icon: History, label: "History" },
+    { href: `${basePath}/analytics`, icon: BarChart2, label: "Analytics" },
+  ];
 
   return (
     <nav
